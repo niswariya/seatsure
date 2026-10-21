@@ -1,0 +1,26 @@
+# Activated with SPRING_PROFILES_ACTIVE=aws (set by the ECS task definition).
+# Credentials come from the default AWS chain: the ECS task role in AWS,
+# or AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_PROFILE on a laptop.
+spring:
+  ai:
+    model:
+      chat: bedrock-converse
+      embedding: bedrock-titan
+    bedrock:
+      aws:
+        region: ${AWS_REGION:ap-south-1}
+        timeout: 60s
+      converse:
+        chat:
+          # Global cross-Region inference profile: callable from ap-south-1 (Mumbai).
+          model: ${BEDROCK_CHAT_MODEL:global.anthropic.claude-haiku-4-5-20251001-v1:0}
+          temperature: 0.3
+          max-tokens: 800
+      titan:
+        embedding:
+          model: ${BEDROCK_EMBEDDING_MODEL:amazon.titan-embed-text-v2:0}
+          input-type: text
+
+seatsure:
+  ai:
+    enabled: true

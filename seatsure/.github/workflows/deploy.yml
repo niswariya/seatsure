@@ -1,0 +1,90 @@
+name: Deploy to AWS
+
+# Runs after CI passes on main (or manually). Builds both images, pushes them to ECR
+# tagged with the commit SHA, and rolls them out to ECS Fargate.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # needed to request the GitHub OIDC token
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false   # never cancel a deployment half-way
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+  CLUSTER: seatsure
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment: production   # optional: add required reviewers in repo settings for a manual gate
+    strategy:
+      max-parallel: 1         # backend first, then frontend
+      matrix:
+        app: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      # No AWS keys stored in GitHub: exchange the OIDC token for temporary role credentials.
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        id: image
+        env:
+          IMAGE: ${{ steps.ecr.outputs.registry }}/seatsure-${{ matrix.app }}:${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          echo "uri=$IMAGE" >> "$GITHUB_OUTPUT"
+          # Tags are immutable in ECR: if this commit was already built (a re-run), reuse it.
+          if aws ecr describe-images --repository-name seatsure-${{ matrix.app }} \
+               --image-ids imageTag="${IMAGE##*:}" >/dev/null 2>&1; then
+            echo "Image already in ECR, skipping build"; exit 0
+          fi
+          docker buildx build ./${{ matrix.app }} \
+            --tag "$IMAGE" \
+            --cache-from type=gha,scope=${{ matrix.app }} \
+            --cache-to type=gha,mode=max,scope=${{ matrix.app }} \
+            --push
+
+      - name: Download current task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition seatsure-${{ matrix.app }} \
+            --query taskDefinition > task-definition.json
+
+      - name: Point the task definition at the new image
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ matrix.app }}
+          image: ${{ steps.image.outputs.uri }}
+
+      # Rolling deployment; ECS's circuit breaker rolls back automatically if new tasks fail health checks.
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          service: seatsure-${{ matrix.app }}
+          cluster: ${{ env.CLUSTER }}
+          wait-for-service-stability: true

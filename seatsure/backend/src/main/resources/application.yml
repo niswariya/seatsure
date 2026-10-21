@@ -1,0 +1,68 @@
+server:
+  port: 8080
+  shutdown: graceful
+
+spring:
+  application:
+    name: seatsure
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/seatsure?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+    username: ${DB_USERNAME:seatsure}
+    password: ${DB_PASSWORD:seatsure}
+    hikari:
+      maximum-pool-size: 20
+  jpa:
+    hibernate:
+      ddl-auto: none              # schema is owned by Flyway migrations
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc.time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  ai:
+    # AI is OFF by default so the app runs anywhere without AWS.
+    # The "aws" profile (application-aws.yml) switches Bedrock on.
+    model:
+      chat: none
+      embedding: none
+
+seatsure:
+  jwt:
+    # 256-bit secret, base64. Override in every real environment.
+    secret: ${JWT_SECRET:c2VhdHN1cmUtZGV2LXNlY3JldC1jaGFuZ2UtbWUtaW4tcHJvZHVjdGlvbiEhIQ==}
+    ttl-minutes: 120
+  hold:
+    ttl-seconds: ${HOLD_TTL_SECONDS:300}
+    max-seats: 6
+    expiry-sweep-ms: 5000
+  outbox:
+    poll-ms: 500
+  rate-limit:
+    holds-per-minute: 10
+  admin:
+    email: ${ADMIN_EMAIL:admin@seatsure.dev}
+    password: ${ADMIN_PASSWORD:Admin@123}
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:5173}
+  seed-demo-event: ${SEED_DEMO_EVENT:true}
+  ai:
+    enabled: false
+    max-input-chars: 500
+    memory-messages: 20
+    requests-per-minute: 8
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html

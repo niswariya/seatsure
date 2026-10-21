@@ -1,0 +1,13 @@
+# Copy to terraform.tfvars and edit. terraform.tfvars is git-ignored.
+aws_region  = "ap-south-1"
+github_repo = "your-github-user/seatsure"
+
+# Budget mode for learning (no NAT gateway, tasks get public IPs, still firewalled).
+# Set to true for the production-style private-subnet layout.
+enable_nat_gateway = false
+
+# First deployment image tag (you push v1 by hand once; after that GitHub Actions deploys).
+image_tag = "v1"
+
+# Optional HTTPS: an ACM certificate in ap-south-1 for your domain.
+# certificate_arn = "arn:aws:acm:ap-south-1:123456789012:certificate/..."
